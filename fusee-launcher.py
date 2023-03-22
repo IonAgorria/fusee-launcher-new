@@ -53,6 +53,7 @@ parser.add_argument('--relocator', metavar='binary', dest='relocator', type=str,
 parser.add_argument('--override-checks', dest='skip_checks', action='store_true', help="don't check for a supported controller; useful if you've patched your EHCI driver")
 parser.add_argument('--allow-failed-id', dest='permissive_id', action='store_true', help="continue even if reading the device's ID fails; useful for development but not for end users")
 parser.add_argument('--tty', dest='tty_mode', action='store_true', help="Enable TTY mode after payload launch")
+parser.add_argument('-dtf', metavar='dump_to_file', dest='dtf_path', type=str, help='dumps usb transfers to file')
 arguments = parser.parse_args()
 
 # Expand out the payload path to handle any user-refrences.
@@ -146,10 +147,30 @@ except IOError:
 if arguments.tty_mode:
     print("Listening to incoming USB Data:")
     print("-------------------------------")
+    
+    dtf_path = os.path.expanduser(arguments.dtf_path)
+    dump = open(dtf_path, "wb")
+            
+    
     while True:
-        buf = rcm_device.read(0x1000)
-        print(buf.hex())
         try:
-	        print(buf.decode('utf-8'))
-        except UnicodeDecodeError:
-	        pass
+            buf = rcm_device.read(0x1000)
+            
+            print("HEX:")
+            print(buf.hex())
+            dump.write(buf)
+            
+            try:
+                string = buf.decode('utf-8')
+                print("UTF-8:")
+                print(string)
+            except UnicodeDecodeError:
+                pass
+            finally:
+                print("++++++++++++++++++++")
+        except:
+            print("-------------------------------")
+            print("End of Transmission")
+            break
+            
+        
