@@ -6,7 +6,7 @@ import usb
 NVIDIA_VID = 0x0955
 
 # USB productID's for various Tegra devices.
-T20_PIDS  = [0x7820]
+T20_PIDS  = [0x7820, 0x7F20]
 T30_PIDS  = [0x7030, 0x7130, 0x7330]
 T114_PIDS = [0x7335, 0x7535]
 T124_PIDS = [0x7140, 0x7f40]
