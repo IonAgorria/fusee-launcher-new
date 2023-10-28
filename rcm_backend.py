@@ -2,28 +2,28 @@ from abc import ABC
 
 from usb_backend import HaxBackend
 
-IRAM_END = 0x40040000
-USB_XFER_MAX = 0x1000
-
 class RCMHax(ABC):
+    USB_XFER_MAX = 0x1000
+    IRAM_END = 0x40040000
+    # The address where the user payload is expected to begin.
+    # A reasonable offset allows Intermezzo to grow without problems
+    PAYLOAD_START_OFF  = 0xE40
 
     def __init__(self, wait_for_device=False, os_override=None, vid=None, pid=None, override_checks=False, debug=False):
         """ Set up our RCM hack connection."""
 
         self.debug = debug
 
-        # The address where the user payload is expected to begin.
-        # A reasonable offset allows Intermezzo to grow without problems
-        self.PAYLOAD_START_OFF  = 0xE40
 
         if self.debug:
             print("RCM_HEADER_SIZE:" , self.RCM_HEADER_SIZE)
             print("RCM_PAYLOAD_ADDR:" , hex(self.RCM_PAYLOAD_ADDR))
             print("COPY_BUFFER_ADDRESSES:" , hex(self.COPY_BUFFER_ADDRESSES[0]), ", ", hex(self.COPY_BUFFER_ADDRESSES[1]))
-            print("STACK_END:" , hex(self.STACK_END))
-            print("STACK_SPRAY_END:" , hex(self.STACK_SPRAY_END))
             print("STACK_SPRAY_START:" , hex(self.STACK_SPRAY_START))
+            print("STACK_SPRAY_END:" , hex(self.STACK_SPRAY_END))
+            print("STACK_END:" , hex(self.STACK_END))
             print("PAYLOAD_START_OFF:" , hex(self.PAYLOAD_START_OFF))
+            print("IRAM_END:" , hex(self.IRAM_END))
 
             print("PID:" , hex(pid))
             print("VID:" , hex(vid))
@@ -77,7 +77,7 @@ class RCMHax(ABC):
         """ Writes data to the main RCM protocol endpoint. """
 
         length = len(data)
-        packet_size = USB_XFER_MAX
+        packet_size = self.USB_XFER_MAX
 
         while length:
             data_to_transmit = min(length, packet_size)
@@ -120,7 +120,7 @@ class RCMHax(ABC):
         """ Switches to the higher RCM buffer, reducing the amount that needs to be copied. """
 
         if self.get_current_buffer_address() != self.COPY_BUFFER_ADDRESSES[1]:
-            self.write(b'\0' * USB_XFER_MAX)
+            self.write(b'\0' * self.USB_XFER_MAX)
 
 
     def trigger_controlled_memcpy(self, length=None):
@@ -138,7 +138,7 @@ class RCMHax(ABC):
         # The max payload size depends on the address of the RCM Payload buffer
         # Add the RCM header size to USB transfer size.
         # Substract 16. IDK they all do it. Test without it.
-        rcm_payload_length  = (IRAM_END - self.RCM_PAYLOAD_ADDR) + self.RCM_HEADER_SIZE - 16
+        rcm_payload_length  = (self.IRAM_END - self.RCM_PAYLOAD_ADDR) + self.RCM_HEADER_SIZE - 16
         if self.debug:
             print("RCM payload length: " , rcm_payload_length)
 
@@ -171,14 +171,14 @@ class RCMHax(ABC):
             stack_spray = (self.RCM_PAYLOAD_ADDR.to_bytes(4, byteorder='little') * repeat_count)
             rcm_payload += stack_spray
 
-        elif len(payload) < ((IRAM_END - self.RCM_PAYLOAD_ADDR) - self.PAYLOAD_START_OFF - (self.STACK_SPRAY_END - self.STACK_SPRAY_START)):
+        elif len(payload) < ((self.IRAM_END - self.RCM_PAYLOAD_ADDR) - self.PAYLOAD_START_OFF - (self.STACK_SPRAY_END - self.STACK_SPRAY_START)):
             if self.debug:
                 print("Payload with intermezzo");
             # The RCM payload needs to contain the stackspray and therefore the actual payload eventually needs to be splitted.
             # Intermezzo will concat it back together
             # Calc sizes for indidual parts
             payload_part1_max_size = self.STACK_SPRAY_START - self.COPY_BUFFER_ADDRESSES[1] - self.PAYLOAD_START_OFF
-            payload_part2_max_size = (IRAM_END - self.RCM_PAYLOAD_ADDR) - (self.STACK_SPRAY_END - self.COPY_BUFFER_ADDRESSES[1])
+            payload_part2_max_size = (self.IRAM_END - self.RCM_PAYLOAD_ADDR) - (self.STACK_SPRAY_END - self.COPY_BUFFER_ADDRESSES[1])
 
             # Check if payload fits in the available space
             if self.debug:
@@ -244,8 +244,8 @@ class RCMHax(ABC):
         # Pad the payload to fill a USB request exactly, so we don't send a short
         # packet and lose track of the current usb USB DMA buffer.
         payload_length = len(rcm_header + rcm_payload) #pad the RCM message full USB buffer.
-        if (payload_length % USB_XFER_MAX) != 0: #don't pad if we already end at correct alignment
-            padding_size   = USB_XFER_MAX - (payload_length % USB_XFER_MAX)
+        if (payload_length % self.USB_XFER_MAX) != 0: #don't pad if we already end at correct alignment
+            padding_size   = self.USB_XFER_MAX - (payload_length % self.USB_XFER_MAX)
             rcm_payload += (b'\0' * padding_size)
 
         rcm_message = rcm_header + rcm_payload
