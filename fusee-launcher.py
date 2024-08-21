@@ -53,6 +53,7 @@ parser.add_argument('-o', metavar='output_file', dest='output_file', type=str, h
 parser.add_argument('--debug', dest='debug', action='store_true', help="enable additional debug output")
 parser.add_argument('--ruler', dest='ruler', type=int, help="generate payload with uint32 incrementing load, useful to guess buffer address")
 parser.add_argument('--debug_trigger', dest='debug_trigger', type=int, help="just send exploit package without payload")
+parser.add_argument('--skip_trigger', dest='skip_trigger', action='store_true', help="just send payload without exploiting")
 
 arguments = parser.parse_args()
 
@@ -91,17 +92,21 @@ if not arguments.debug_trigger:
 
     # Send the constructed payload, which contains the command, the stack smashing
     # values, the Intermezzo relocation stub, and the final payload.
-    print("Uploading payload...")
+    print(f"Uploading payload...  {len(rcm_message)}")
     rcm_device.write(rcm_message)
 
     # The RCM backend alternates between two different DMA buffers. Ensure we're
     # about to DMA into the higher one, so we have less to copy during our attack.
     rcm_device.switch_to_highbuf()
 
+print(f"Read RCM: {rcm_device.read(4)}")
+
+exit(0)
+
 # Smash the device's stack, triggering the vulnerability.
 print("Smashing the stack...")
 try:
-    rcm_device.trigger_controlled_memcpy(arguments.debug_trigger)
+    rcm_device.trigger_controlled_memcpy(arguments.debug_trigger, arguments.skip_trigger)
 except ValueError as e:
     print(str(e))
 except IOError:

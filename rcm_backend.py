@@ -1,5 +1,6 @@
 from abc import ABC
 
+import os
 from usb_backend import HaxBackend
 
 class RCMHax(ABC):
@@ -123,12 +124,15 @@ class RCMHax(ABC):
             self.write(b'\0' * self.USB_XFER_MAX)
 
 
-    def trigger_controlled_memcpy(self, length=None):
+    def trigger_controlled_memcpy(self, length=None, skip_trigger=False):
         """ Triggers the RCM vulnerability, causing it to make a signficantly-oversized memcpy. """
 
         # Determine how much we'd need to transmit to smash the full stack.
         if length is None:
             length = self.STACK_END - self.get_current_buffer_address() #  This should work with stack_spray_end, but it doesn't
+        if skip_trigger:
+            print("Skipping trigger, intended length:", hex(length))
+            return None
 
         return self.backend.trigger_vulnerability(length)
 
