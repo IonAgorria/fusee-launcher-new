@@ -54,13 +54,13 @@ def detect_device(wait_for_device=False, os_override=None, vid=None, pid=None, o
 class T20(RCMHax):
     def __init__(self, *args, **kwargs):
         self.RCM_HEADER_SIZE  = RCM_V1_HEADER_SIZE
-        self.RCM_PAYLOAD_ADDR = 0x40009000
+        self.RCM_PAYLOAD_ADDR = 0x40008000
 
         self.COPY_BUFFER_ADDRESSES   = [0, 0x40004000] # Lower Buffer doesn't matter
 
         self.STACK_END           = self.RCM_PAYLOAD_ADDR
         self.STACK_SPRAY_END     = self.STACK_END
-        self.STACK_SPRAY_START   = self.COPY_BUFFER_ADDRESSES[1] + 0x400
+        self.STACK_SPRAY_START   = self.COPY_BUFFER_ADDRESSES[1] + 0x200
 
         RCMHax.__init__(self, *args, **kwargs)
 

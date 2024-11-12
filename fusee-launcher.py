@@ -99,9 +99,6 @@ if not arguments.debug_trigger:
     # about to DMA into the higher one, so we have less to copy during our attack.
     rcm_device.switch_to_highbuf()
 
-print(f"Read RCM: {rcm_device.read(4)}")
-
-exit(0)
 
 # Smash the device's stack, triggering the vulnerability.
 print("Smashing the stack...")

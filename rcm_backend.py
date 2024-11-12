@@ -131,7 +131,7 @@ class RCMHax(ABC):
         if length is None:
             length = self.STACK_END - self.get_current_buffer_address() #  This should work with stack_spray_end, but it doesn't
         if skip_trigger:
-            print("Skipping trigger, intended length:", hex(length))
+            print("Skipping trigger, intended length:", length)
             return None
 
         return self.backend.trigger_vulnerability(length)
