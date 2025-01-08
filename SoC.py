@@ -52,7 +52,7 @@ def detect_device(wait_for_device=False, os_override=None, vid=None, pid=None, o
     return None
 
 class T20(RCMHax):
-    def __init__(self, wait_for_device=False, os_override=None, vid=None, pid=None, override_checks=False, debug=False):
+    def __init__(self, *args, **kwargs):
         self.RCM_HEADER_SIZE  = RCM_V1_HEADER_SIZE
         self.RCM_PAYLOAD_ADDR = 0x40008000
 
@@ -62,10 +62,10 @@ class T20(RCMHax):
         self.STACK_SPRAY_END     = self.STACK_END
         self.STACK_SPRAY_START   = self.STACK_SPRAY_END - 0x200 # 512 Byte should be enough? #0x40009E40
 
-        RCMHax.__init__(self, wait_for_device=wait_for_device, os_override=os_override, vid=vid, pid=pid, override_checks=override_checks, debug=debug)
+        RCMHax.__init__(self, *args, **kwargs)
 
 class T30(RCMHax):
-    def __init__(self, wait_for_device=False, os_override=None, vid=None, pid=None, override_checks=False, debug=False):
+    def __init__(self, *args, **kwargs):
         self.RCM_HEADER_SIZE  = RCM_V1_HEADER_SIZE
         self.RCM_PAYLOAD_ADDR = 0x4000A000
 
@@ -75,10 +75,10 @@ class T30(RCMHax):
         self.STACK_SPRAY_END     = self.RCM_PAYLOAD_ADDR - 420 # exact position is known.
         self.STACK_SPRAY_START   = self.STACK_SPRAY_END - 4
 
-        RCMHax.__init__(self, wait_for_device=wait_for_device, os_override=os_override, vid=vid, pid=pid, override_checks=override_checks, debug=debug)
+        RCMHax.__init__(self, *args, **kwargs)
 
 class T114(RCMHax):
-    def __init__(self, wait_for_device=False, os_override=None, vid=None, pid=None, override_checks=False, debug=False):
+    def __init__(self, *args, **kwargs):
         self.RCM_HEADER_SIZE  = RCM_V35_HEADER_SIZE
         self.RCM_PAYLOAD_ADDR = 0x4000E000
 
@@ -88,11 +88,11 @@ class T114(RCMHax):
         self.STACK_SPRAY_END     = self.STACK_END - 1572 # exact position is known.
         self.STACK_SPRAY_START   = self.STACK_SPRAY_END - 4
 
-        RCMHax.__init__(self, wait_for_device=wait_for_device, os_override=os_override, vid=vid, pid=pid, override_checks=override_checks, debug=debug)
+        RCMHax.__init__(self, *args, **kwargs)
 
 class T124(RCMHax):
 
-    def __init__(self, wait_for_device=False, os_override=None, vid=None, pid=None, override_checks=False, debug=False):
+    def __init__(self, *args, **kwargs):
         self.RCM_HEADER_SIZE  = RCM_V40_HEADER_SIZE
         self.RCM_PAYLOAD_ADDR = 0x4000E000
 
@@ -102,11 +102,11 @@ class T124(RCMHax):
         self.STACK_SPRAY_END     = self.STACK_END
         self.STACK_SPRAY_START   = self.STACK_SPRAY_END - 0x200 # Might not be enough
 
-        RCMHax.__init__(self, wait_for_device=wait_for_device, os_override=os_override, vid=vid, pid=pid, override_checks=override_checks, debug=debug)
+        RCMHax.__init__(self, *args, **kwargs)
 
 class T132(RCMHax):
 
-    def __init__(self, wait_for_device=False, os_override=None, vid=None, pid=None, override_checks=False, debug=False):
+    def __init__(self, *args, **kwargs):
         self.RCM_HEADER_SIZE  = RCM_V40_HEADER_SIZE
         self.RCM_PAYLOAD_ADDR = 0x4000F000
 
@@ -116,11 +116,11 @@ class T132(RCMHax):
         self.STACK_SPRAY_END     = self.STACK_END
         self.STACK_SPRAY_START   = self.STACK_SPRAY_END - 0x200 # Might not be enough
 
-        RCMHax.__init__(self, wait_for_device=wait_for_device, os_override=os_override, vid=vid, pid=pid, override_checks=override_checks, debug=debug)
+        RCMHax.__init__(self, *args, **kwargs)
 
 class T210(RCMHax):
 
-    def __init__(self, wait_for_device=False, os_override=None, vid=None, pid=None, override_checks=False, debug=False):
+    def __init__(self, *args, **kwargs):
         self.RCM_HEADER_SIZE  = RCM_V4P_HEADER_SIZE
         self.RCM_PAYLOAD_ADDR = 0x40010000
 
@@ -130,4 +130,4 @@ class T210(RCMHax):
         self.STACK_SPRAY_END     = self.STACK_END
         self.STACK_SPRAY_START   = self.STACK_SPRAY_END - 0x200 # Might not be enough
 
-        RCMHax.__init__(self, wait_for_device=wait_for_device, os_override=os_override, vid=vid, pid=pid, override_checks=override_checks, debug=debug)
+        RCMHax.__init__(self, *args, **kwargs)
