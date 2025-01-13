@@ -38,6 +38,8 @@ import usb
 from SoC import *
 
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
 def parse_usb_id(id):
     """ Quick function to parse VID/PID arguments. """
     return int(id, 16)
@@ -45,60 +47,41 @@ def parse_usb_id(id):
 # Read our arguments.
 parser = argparse.ArgumentParser(description='launcher for the fusee gelee exploit (by @ktemkin)')
 parser.add_argument('payload', metavar='payload', type=str, help='ARM payload to be launched')
-parser.add_argument('-w', dest='wait', action='store_true', help='wait for an RCM connection if one isn\'t present')
-parser.add_argument('-V', metavar='vendor_id', dest='vid', type=parse_usb_id, default=None, help='overrides the TegraRCM vendor ID')
-parser.add_argument('-P', metavar='product_id', dest='pid', type=parse_usb_id, default=None, help='overrides the TegraRCM product ID')
+parser.add_argument('-w', dest='wait_for_device', action='store_true', help='wait for an RCM connection if one isn\'t present')
+parser.add_argument('-V', '--vid', metavar='vendor_id', dest='vid', type=parse_usb_id, default=None, help='overrides the TegraRCM vendor ID')
+parser.add_argument('-P', '--pid', metavar='product_id', dest='pid', type=parse_usb_id, default=None, help='overrides the TegraRCM product ID')
 parser.add_argument('--override-os', metavar='platform', dest='platform', type=str, default=None, help='overrides the detected OS; for advanced users only')
-parser.add_argument('--relocator', metavar='binary', dest='relocator', type=str, default="%s/intermezzo.bin" % os.path.dirname(os.path.abspath(__file__)), help='provides the path to the intermezzo relocation stub')
+parser.add_argument('--relocator', metavar='binary', dest='relocator', type=str, default=os.path.join(current_dir, "intermezzo.bin"), help='provides the path to the intermezzo relocation stub')
 parser.add_argument('--override-checks', dest='skip_checks', action='store_true', help="don't check for a supported controller; useful if you've patched your EHCI driver")
 parser.add_argument('--allow-failed-id', dest='permissive_id', action='store_true', help="continue even if reading the device's ID fails; useful for development but not for end users")
 parser.add_argument('--tty', dest='tty_mode', action='store_true', help="dump usb transfers to stdout")
 parser.add_argument('-o', metavar='output_file', dest='output_file', type=str, help='dump usb transfers to file')
 parser.add_argument('--debug', dest='debug', action='store_true', help="enable additional debug output")
+parser.add_argument('--force-soc', dest='force_soc', action='store_true', help="force a specific soc")
+parser.add_argument('--skip-upload', dest='skip_upload', action='store_true', help="don't send payload")
+parser.add_argument('--skip-smash', dest='skip_smash', action='store_true', help="don't trigger stack smashing")
 
 arguments = parser.parse_args()
-
-# Expand out the payload path to handle any user-refrences.
-payload_path = os.path.expanduser(arguments.payload)
-if not os.path.isfile(payload_path):
-    print("Invalid payload path specified!")
-    sys.exit(-1)
-
-# Find our intermezzo relocator...
-intermezzo_path = os.path.expanduser(arguments.relocator)
-if not os.path.isfile(intermezzo_path):
-    print("Could not find the intermezzo interposer. Did you build it?")
-    sys.exit(-1)
+arguments.current_dir = current_dir
 
 # Automatically choose the correct SoC based on the USB product ID.
-rcm_device = detect_device(wait_for_device=arguments.wait, os_override=arguments.platform, vid=arguments.vid, pid=arguments.pid, override_checks=arguments.skip_checks, debug=arguments.debug)
+rcm_device = detect_device(arguments)
 if rcm_device is None:
     print("No RCM device found")
     sys.exit(-1)
 else:
     print("Detected a" , type(rcm_device).__name__, "SoC")
-    print('VendorID=' + hex(rcm_device.dev.idVendor) + ' & ProductID=' + hex(rcm_device.dev.idProduct))
+    print('VendorID=' + hex(rcm_device.vid) + ' & ProductID=' + hex(rcm_device.pid))
 
-# Print the device's ID. Note that reading the device's ID is necessary to get it into RCM.
-try:
-    device_id = rcm_device.read_device_id()
-    print("Found a Tegra with Device ID: {}".format(device_id.hex()))
-except OSError as e:
-    # Raise the exception only if we're not being permissive about ID reads.
-    if not arguments.permissive_id:
-        raise e
+if arguments.skip_upload:
+    print("Skipping uploading payload")
+else:
+    rcm_device.upload_payload(arguments)
 
-# Construct the RCM message which contains the data needed for the exploit.
-rcm_message = rcm_device.create_rcm_message(intermezzo_path, payload_path)
-
-# Send the constructed payload, which contains the command, the stack smashing
-# values, the Intermezzo relocation stub, and the final payload.
-print("Uploading payload...")
-rcm_device.write(rcm_message)
-
-# The RCM backend alternates between two different DMA buffers. Ensure we're
-# about to DMA into the higher one, so we have less to copy during our attack.
-rcm_device.switch_to_highbuf()
+if arguments.skip_smash:
+    if arguments.debug:
+        print("Skipping the stack smashing")
+    exit(0)
 
 # Smash the device's stack, triggering the vulnerability.
 print("Smashing the stack...")

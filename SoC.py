@@ -1,4 +1,4 @@
-from rcm_backend import RCMHax
+from rcm_backend import EPHax, RCMHax, IRAMHax
 
 import usb
 
@@ -19,50 +19,64 @@ RCM_V35_HEADER_SIZE = 628
 RCM_V40_HEADER_SIZE = 644
 RCM_V4P_HEADER_SIZE = 680
 
-def detect_device(wait_for_device=False, os_override=None, vid=None, pid=None, override_checks=False, debug=False) -> RCMHax:
-    while True:
-        if pid is None:
-            devs = usb.core.find(find_all=1, idVendor=NVIDIA_VID)
+def select_device_hax(arguments, vid, pid) -> EPHax|None:
+    try:
+        if pid in T20_PIDS:
+            return T20(arguments=arguments, vid=vid, pid=pid)
+        elif pid in T30_PIDS:
+            return T30(arguments=arguments, vid=vid, pid=pid)
+        elif pid in T114_PIDS:
+            return T114(arguments=arguments, vid=vid, pid=pid)
+        elif pid in T124_PIDS:
+            return T124(arguments=arguments, vid=vid, pid=pid)
+        elif pid in T132_PIDS:
+            return T132(arguments=arguments, vid=vid, pid=pid)
+        elif pid in T210_PIDS:
+            return T210(arguments=arguments, vid=vid, pid=pid)
         else:
-            devs = usb.core.find(find_all=1, idVendor=NVIDIA_VID, idProduct=pid)
+            print(f"Detected an unknown Nvidia device! VID {vid:04x} PID {pid:04x}")
+            print("If this is an error please add the ProductID to SoC.py")
+            return None
+    except IOError as e:
+        print(e)
+        exit(-1)
+
+def detect_device(arguments) -> EPHax|None:
+    if arguments.vid is None:
+        arguments.vid = NVIDIA_VID
+
+    if arguments.force_soc:
+        if arguments.pid is None:
+            print("No SoC's USB Product ID was specified!")
+            exit(1)
+        return select_device_hax(arguments, vid=arguments.vid, pid=arguments.pid)
+
+    while True:
+        if arguments.pid is None:
+            devs = usb.core.find(find_all=1, idVendor=arguments.vid)
+        else:
+            devs = usb.core.find(find_all=1, idVendor=arguments.vid, idProduct=arguments.pid)
 
         for dev in devs:
-            try:
-                if dev.idProduct in T20_PIDS:
-                    return T20(vid=dev.idVendor, pid=dev.idProduct, wait_for_device=wait_for_device, os_override=os_override, override_checks=override_checks, debug=debug)
-                elif dev.idProduct in T30_PIDS:
-                    return T30(vid=dev.idVendor, pid=dev.idProduct, wait_for_device=wait_for_device, os_override=os_override, override_checks=override_checks, debug=debug)
-                elif dev.idProduct in T114_PIDS:
-                    return T114(vid=dev.idVendor, pid=dev.idProduct, wait_for_device=wait_for_device, os_override=os_override, override_checks=override_checks, debug=debug)
-                elif dev.idProduct in T124_PIDS:
-                    return T124(vid=dev.idVendor, pid=dev.idProduct, wait_for_device=wait_for_device, os_override=os_override, override_checks=override_checks, debug=debug)
-                elif dev.idProduct in T132_PIDS:
-                    return T132(vid=dev.idVendor, pid=dev.idProduct, wait_for_device=wait_for_device, os_override=os_override, override_checks=override_checks, debug=debug)
-                elif dev.idProduct in T210_PIDS:
-                    return T210(vid=dev.idVendor, pid=dev.idProduct, wait_for_device=wait_for_device, os_override=os_override, override_checks=override_checks, debug=debug)
-                else:
-                    print("detected an unknown Nvidia device")
-                    print("If this is an error please add the ProductID to SoC.py")
-            except IOError as e:
-                print(e)
-                sys.exit(-1)
-        if not wait_for_device:
+            result = select_device_hax(arguments, vid=dev.idVendor, pid=dev.idProduct)
+            if result is not None:
+                return result
+
+        if not arguments.wait_for_device:
             break
 
     return None
 
-class T20(RCMHax):
+class T20(IRAMHax):
     def __init__(self, *args, **kwargs):
-        self.RCM_HEADER_SIZE  = RCM_V1_HEADER_SIZE
-        self.RCM_PAYLOAD_ADDR = 0x40008000
+        self.IRAM_PAYLOAD_ADDR = 0x40008000
+        self.IRAM_EP0_BUFFER_ADDRESS = 0x40003000
+        
+        self.STACK_END         = 0x40008000
+        self.STACK_SPRAY_START = 0x4000222C #This will fall to the return address in stack
+        self.STACK_SPRAY_END   = self.STACK_SPRAY_START + 4
 
-        self.COPY_BUFFER_ADDRESSES   = [0, 0x40005000] # Lower Buffer doesn't matter
-
-        self.STACK_END           = self.RCM_PAYLOAD_ADDR
-        self.STACK_SPRAY_END     = self.STACK_END
-        self.STACK_SPRAY_START   = self.STACK_SPRAY_END - 0x200 # 512 Byte should be enough? #0x40009E40
-
-        RCMHax.__init__(self, *args, **kwargs)
+        IRAMHax.__init__(self, *args, **kwargs)
 
 class T30(RCMHax):
     def __init__(self, *args, **kwargs):

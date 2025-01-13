@@ -9,16 +9,24 @@ class HaxBackend(ABC):
     """
 
     # USB constants used
-    STANDARD_REQUEST_DEVICE_TO_HOST_TO_ENDPOINT = 0x82
     STANDARD_REQUEST_DEVICE_TO_HOST   = 0x80
+    RECIPIENT_DEVICE = 0x0
+    RECIPIENT_INTERFACE = 0x1
+    RECIPIENT_ENDPOINT = 0x2
+    GET_STATUS        = 0x0
     GET_DESCRIPTOR    = 0x6
     GET_CONFIGURATION = 0x8
-
-    # Interface requests
-    GET_STATUS        = 0x0
+    GET_INTERFACE     = 0xA
 
     # List of OSs this class supports.
     SUPPORTED_SYSTEMS = []
+    
+    # Request type to use per request
+    RECIPIENT_FOR_REQUEST = {
+        GET_CONFIGURATION: RECIPIENT_DEVICE,
+        GET_INTERFACE: RECIPIENT_INTERFACE,
+        GET_STATUS: RECIPIENT_ENDPOINT,
+    }
 
     def __init__(self, skip_checks=False):
         """ Sets up the backend for the given device. """
@@ -30,7 +38,7 @@ class HaxBackend(ABC):
         pass
 
 
-    def trigger_vulnerability(self, length):
+    def trigger_vulnerability(self, request, length):
         """
         Triggers the actual controlled memcpy.
         The actual trigger needs to be executed carefully, as different host OSs
@@ -49,7 +57,7 @@ class HaxBackend(ABC):
         else:
             system = platform.system()
 
-        return system in cls.SUPPORTED_SYSTEMS
+        return system.lower() in cls.SUPPORTED_SYSTEMS
 
 
     @classmethod
@@ -97,12 +105,15 @@ class MacOSBackend(HaxBackend):
     """
 
     BACKEND_NAME = "macOS"
-    SUPPORTED_SYSTEMS = ['Darwin', 'libusbhax', 'macos', 'FreeBSD']
+    SUPPORTED_SYSTEMS = ['darwin', 'libusbhax', 'macos', 'freebsd']
 
-    def trigger_vulnerability(self, length):
+    def trigger_vulnerability(self, request, length):
 
         # Triggering the vulnerability is simplest on macOS; we simply issue the control request as-is.
-        return self.dev.ctrl_transfer(self.STANDARD_REQUEST_DEVICE_TO_HOST_TO_ENDPOINT, self.GET_STATUS, 0, 0, length)
+        return self.dev.ctrl_transfer(
+            self.STANDARD_REQUEST_DEVICE_TO_HOST | self.RECIPIENT_FOR_REQUEST[request],
+            request, 0, 0, length
+        )
 
 
 
@@ -115,7 +126,7 @@ class LinuxBackend(HaxBackend):
     """
 
     BACKEND_NAME = "Linux"
-    SUPPORTED_SYSTEMS = ['Linux', 'linux']
+    SUPPORTED_SYSTEMS = ['linux']
     SUPPORTED_USB_CONTROLLERS = ['pci/drivers/xhci_hcd', 'platform/drivers/dwc_otg']
 
     SETUP_PACKET_SIZE = 8
@@ -150,7 +161,7 @@ class LinuxBackend(HaxBackend):
         print("device into a blue 'USB 3' port.\n")
 
 
-    def trigger_vulnerability(self, length):
+    def trigger_vulnerability(self, request, length):
         """
         Submit the control request directly using the USBFS submit_urb
         ioctl, which issues the control request directly. This allows us
@@ -168,12 +179,13 @@ class LinuxBackend(HaxBackend):
         fd = os.open('/dev/bus/usb/{:0>3d}/{:0>3d}'.format(self.dev.bus, self.dev.address), os.O_RDWR)
 
         # Define the setup packet to be submitted.
+        request_type = self.STANDARD_REQUEST_DEVICE_TO_HOST | self.RECIPIENT_FOR_REQUEST[request]
         setup_packet = \
-            int.to_bytes(self.STANDARD_REQUEST_DEVICE_TO_HOST_TO_ENDPOINT, 1, byteorder='little') + \
-            int.to_bytes(self.GET_STATUS,                                  1, byteorder='little') + \
-            int.to_bytes(0,                                                2, byteorder='little') + \
-            int.to_bytes(0,                                                2, byteorder='little') + \
-            int.to_bytes(length,                                           2, byteorder='little')
+            int.to_bytes(request_type, 1, byteorder='little') + \
+            int.to_bytes(request,      1, byteorder='little') + \
+            int.to_bytes(0,            2, byteorder='little') + \
+            int.to_bytes(0,            2, byteorder='little') + \
+            int.to_bytes(length,       2, byteorder='little')
 
         # Create a buffer to hold the result.
         buffer_size = self.SETUP_PACKET_SIZE + length
@@ -254,7 +266,7 @@ class WindowsBackend(HaxBackend):
     """
 
     BACKEND_NAME = "Windows"
-    SUPPORTED_SYSTEMS = ["Windows"]
+    SUPPORTED_SYSTEMS = ["windows"]
 
     # Windows and libusbK specific constants
     WINDOWS_FILE_DEVICE_UNKNOWN = 0x00000022
@@ -277,7 +289,7 @@ class WindowsBackend(HaxBackend):
         self.lib = ctypes.cdll.libusbK
 
 
-    def find_device(self, Vid, Pid):
+    def find_device(self, vid=None, pid=None):
         """
         Windows version of this function
         Its return isn't actually significant, but it needs to be not None
@@ -293,7 +305,7 @@ class WindowsBackend(HaxBackend):
 
         # Get info for a device with that vendor ID and product ID
         device_info = ctypes.pointer(self.libk.KLST_DEV_INFO())
-        ret = self.lib.LstK_FindByVidPid(device_list, Vid, Pid, ctypes.byref(device_info))
+        ret = self.lib.LstK_FindByVidPid(device_list, vid, pid, ctypes.byref(device_info))
         self.lib.LstK_Free(ctypes.byref(device_list))
         if device_info is None or ret == 0:
             return None
@@ -354,7 +366,7 @@ class WindowsBackend(HaxBackend):
         if ret == False:
             raise ctypes.WinError()
 
-    def trigger_vulnerability(self, length):
+    def trigger_vulnerability(self, request, length):
         """
         Go over libusbK's head and get the master handle it's been using internally
         and perform a direct DeviceIoControl call to the kernel to skip the length check
@@ -376,13 +388,13 @@ class WindowsBackend(HaxBackend):
         timeout_p.contents = ctypes.c_ulong(1000) # milliseconds
 
         status_p = ctypes.cast(ctypes.byref(raw_request, 4), ctypes.POINTER(self.libk.status_t))
-        status_p.contents.index = self.GET_STATUS
-        status_p.contents.recipient = self.TO_ENDPOINT
+        status_p.contents.index = request
+        status_p.contents.recipient = self.RECIPIENT_FOR_REQUEST[request]
 
         buffer = ctypes.create_string_buffer(length)
 
         code = self.win_ctrl_code(self.WINDOWS_FILE_DEVICE_UNKNOWN, self.LIBUSBK_FUNCTION_CODE_GET_STATUS, self.WINDOWS_METHOD_BUFFERED, self.WINDOWS_FILE_ANY_ACCESS)
         ret = self.ioctl(master_handle, ctypes.c_ulong(code), raw_request, ctypes.c_size_t(24), buffer, ctypes.c_size_t(length))
 
-        if ret == False:
+        if not ret:
             raise ctypes.WinError()
