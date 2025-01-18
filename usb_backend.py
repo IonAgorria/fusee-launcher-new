@@ -73,18 +73,18 @@ class HaxBackend(ABC):
         raise IOError("No backend to trigger the vulnerability-- it's likely we don't support your OS!")
 
 
-    def read(self, length):
+    def read(self, endpoint, length):
         """ Reads data from the RCM protocol endpoint. """
-        return bytes(self.dev.read(0x81, length, 1000))
+        return bytes(self.dev.read(endpoint, length, 1000))
 
 
-    def write_single_buffer(self, data):
+    def write(self, endpoint, data):
         """
         Writes a single RCM buffer, which should be 0x1000 long.
         The last packet may be shorter, and should trigger a ZLP (e.g. not divisible by 512).
         If it's not, send a ZLP.
         """
-        return self.dev.write(0x01, data, 1000)
+        return self.dev.write(endpoint, data, 1000)
 
 
     def find_device(self, vid=None, pid=None):
@@ -325,7 +325,7 @@ class WindowsBackend(HaxBackend):
         return self.dev
 
 
-    def read(self, length):
+    def read(self, endpoint, length):
         """ Read using libusbK """
         # Create the buffer to store what we read
         buffer = ctypes.create_string_buffer(length)
@@ -333,14 +333,14 @@ class WindowsBackend(HaxBackend):
         len_transferred = ctypes.c_uint(0)
 
         # Call libusbK's ReadPipe using our specially-crafted function pointer and the opaque device handle
-        ret = self.dev.ReadPipe(self.handle, ctypes.c_ubyte(0x81), ctypes.addressof(buffer), ctypes.c_uint(length), ctypes.byref(len_transferred), None)
+        ret = self.dev.ReadPipe(self.handle, ctypes.c_ubyte(endpoint), ctypes.addressof(buffer), ctypes.c_uint(length), ctypes.byref(len_transferred), None)
 
         if ret == 0:
             raise ctypes.WinError()
 
         return buffer.raw
 
-    def write_single_buffer(self, data):
+    def write(self, endpoint, data):
         """ Write using libusbK """
         # Copy construct to a bytearray so we Know™ what type it is
         buffer = bytearray(data)
@@ -351,7 +351,7 @@ class WindowsBackend(HaxBackend):
         len_transferred = ctypes.c_uint(0)
 
         # Call libusbK's WritePipe using our specially-crafted function pointer and the opaque device handle
-        ret = self.dev.WritePipe(self.handle, ctypes.c_ubyte(0x01), cbuffer, len(data), ctypes.byref(len_transferred), None)
+        ret = self.dev.WritePipe(self.handle, ctypes.c_ubyte(endpoint), cbuffer, len(data), ctypes.byref(len_transferred), None)
         if ret == 0:
             raise ctypes.WinError()
 

@@ -1,6 +1,7 @@
 import os
 import platform
 import struct
+import sys
 from abc import ABC
 
 from usb_backend import HaxBackend
@@ -37,20 +38,37 @@ class EPHax(ABC):
             exit(-1)
 
         # Grab a connection to the USB device itself.
-        self.dev = self.find_device(vid, pid)
+        dev = self.find_device(vid, pid)
 
-        # If we don't have a device...
-        if self.dev is None and not arguments.force_soc:
+        if arguments.override_usb_path is None:
+            # If we don't have a device...
+            if dev is None:
+                # ... and we're allowed to wait for one, wait indefinitely for one to appear...
+                if arguments.wait_for_device:
+                    print("Waiting for a TegraRCM device to come online...")
+                    while dev is None:
+                        dev = self.find_device(vid, pid)
+    
+                # ... or bail out.
+                else:
+                    raise IOError("No TegraRCM device found?")
+    
+            #Generate USB path
+            self.dev_usb_bus = self.dev_usb_path = str(dev.bus)
+            first = True
+            for p in dev.port_numbers:
+                if first:
+                    first = False
+                    self.dev_usb_path += "-"
+                else:
+                    self.dev_usb_path += "."
+                self.dev_usb_path += str(p)
+        else:
+            self.dev_usb_path = arguments.override_usb_path
+            self.dev_usb_bus = self.dev_usb_path.split("-")[0]
 
-            # ... and we're allowed to wait for one, wait indefinitely for one to appear...
-            if arguments.wait_for_device:
-                print("Waiting for a TegraRCM device to come online...")
-                while self.dev is None:
-                    self.dev = self.find_device(vid, pid)
-
-            # ... or bail out.
-            else:
-                raise IOError("No TegraRCM device found?")
+        if self.debug:
+            print(f"USB Device Bus: {self.dev_usb_bus} Path: {self.dev_usb_path}")
 
         # Print any use-related warnings.
         self.backend.print_warnings()
@@ -88,12 +106,18 @@ class EPHax(ABC):
         if not request:
             request = self.TRIGGER_USB_REQUEST
         
+        if self.debug:
+            print(f"Sending trigger request {request} of length 0x{length:x}")
         return self.backend.trigger_vulnerability(request, length)
 
 
     def supported(self, system_override=None):
         """ Returns true iff the given backend is supported on this platform. """
         raise NotImplementedError("This SoC/Hax must have upload_payload implemented")
+    
+
+    def post_trigger(self):
+        pass
 
 
 class RCMHax(EPHax):
@@ -135,7 +159,7 @@ class RCMHax(EPHax):
 
     def read(self, length):
         """ Reads data from the RCM protocol endpoint. """
-        return self.backend.read(length)
+        return self.backend.read(0x81, length)
 
 
     def write(self, data):
@@ -160,7 +184,7 @@ class RCMHax(EPHax):
         If it's not, send a ZLP.
         """
         self._toggle_buffer()
-        return self.backend.write_single_buffer(data)
+        return self.backend.write(0x01, data)
 
 
     def _toggle_buffer(self):
@@ -395,9 +419,21 @@ class IRAMHax(EPHax):
         """ Returns the base address for the current copy. """
         return self.IRAM_EP0_BUFFER_ADDRESS
 
+
+    def linux_get_usb_sysfs(self, device, path):
+        with open (f"/sys/bus/usb/devices/{device}/{path}", "r") as f:
+            return f.read()
+
+
+    def linux_set_usb_sysfs(self, device, path, value):
+        if self.debug:
+            print(f"Setting usb {device}/{path} = {value}")
+        with open (f"/sys/bus/usb/devices/{device}/{path}", "w") as f:
+            f.write(value)
+
+
     def upload_payload(self, arguments):
         is_linux = platform.system().lower() in ["linux"]
-        usb_bus = self.dev.bus
         
         devmem_cmd = "busybox devmem"
         
@@ -415,7 +451,7 @@ class IRAMHax(EPHax):
 
         #Spray for stack
         for addr in range(self.STACK_SPRAY_START, self.STACK_SPRAY_END, 4):
-            script_text += f"$DEVMEM {hex(addr)} 32 {hex(self.IRAM_PAYLOAD_ADDR)}\n"
+            script_text += f"$DEVMEM 0x{addr:X} 32 0x{self.IRAM_PAYLOAD_ADDR:X}\n"
 
         #Payload loader
         payload_len = len(payload)
@@ -423,15 +459,25 @@ class IRAMHax(EPHax):
             addr = self.IRAM_PAYLOAD_ADDR + written
             left = min(8, payload_len - written)
             data = struct.unpack("<Q", payload[written:written+left] + bytes(8 - left))[0]
-            script_text += f"$DEVMEM {hex(addr)} 64 {hex(data)}\n"
+            script_text += f"$DEVMEM 0x{addr:X} 64 0x{data:X}\n"
+            
+        fusee_cmd = []
+        for arg in sys.argv:
+            if arg == "--skip-smash":
+                arg = "--skip-upload"
+            if arg[0] != '-' or arg in [
+                "-w", "-V", "--vid", "-P", "--pid", "--override-os", "--override-checks",
+               '--tty', '-o', '--debug', '--override-usb-path', '--skip-upload']:
+                fusee_cmd.append(arg)
+        fusee_cmd = " ".join(fusee_cmd)
 
-        script_text += "echo \"Finished loading data to IRAM! entering RCM...\"\n"
-        script_text += "echo \"Now run fusee-launcher with --skip-upload instead of --skip-smash\"\n"
-        script_text += "echo \"With that the device should run the payload\"\n"
-        script_text += "echo \"If doesn't respond after few seconds reboot it\"\n"
-        script_text += "echo \"After executing fusee-launcher with --skip-upload run\"\n"
-        script_text += "echo \"this on your computer to restore normal usb enumeration:\"\n"
-        script_text += f"echo \"echo 1 | sudo tee /sys/bus/usb/devices/usb{usb_bus}/authorized_default\"\n"
+        script_text += "echo \"Finished loading data to IRAM! will enter RCM now...\"\n"
+        script_text += "echo \"If after launching this command the device doesn't respond after few seconds reboot it\"\n"
+        script_text += "echo \"Run on your computer to continue with exploit:\n\"\n"
+        if is_linux and self.linux_get_usb_sysfs(f"usb{self.dev_usb_bus}", "authorized_default").strip() == "1":
+            script_text += f"echo \"echo 1 | sudo tee /sys/bus/usb/devices/usb{self.dev_usb_bus}/authorized_default\"\n"
+        script_text += f"echo \"sudo {fusee_cmd}\"\n"
+        script_text += "sleep 1\n"
         script_text += f"$DEVMEM 0x7000E450 32 0x2\n"
         script_text += f"$DEVMEM 0x7000E400 32 0x10\n"
 
@@ -440,14 +486,21 @@ class IRAMHax(EPHax):
         with open(script_path, "w") as f:
             f.write(script_text)
             
-        print(f"\n\n\nGenerated script to load the payload into your device")
+        print(f"\n\n\nGenerated script to load the payload into your device\n"
+              f"Please run it in your device (android/recovery) with root user\n"
+              f"Don't change USB port the device is connected to while doing these steps!")
         if is_linux:
             print(f"NOTE:  On linux the normal USB enumeration must be stopped to\n"
                   f"avoid SET_CONFIGURATION being sent by setting\n"
-                  f"authorized_default on the usb bus{usb_bus} as 0\n")
+                  f"authorized_default on the usb bus {self.dev_usb_bus} as 0\n")
         print(f"Use these commands for that:\n")
+        print(f"adb push {script_path} /sdcard/iram_payload.sh")
         if is_linux:
-            print(f"echo 0 | sudo tee /sys/bus/usb/devices/usb{usb_bus}/authorized_default")
-        print(f"adb push {script_path} /sdcard/iram_payload.sh\n"
-              f"adb shell sh \"/sdcard/iram_payload.sh\"\n")
-        
+            print(f"echo 0 | sudo tee /sys/bus/usb/devices/usb{self.dev_usb_bus}/authorized_default")
+        print(f"adb shell sh \"/sdcard/iram_payload.sh\""
+              f"\n\n-------------------------------------------")
+
+
+    def read(self, length):
+        """ Reads data """
+        return self.backend.read(0x81, length)

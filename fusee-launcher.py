@@ -33,6 +33,8 @@ import errno
 import ctypes
 import argparse
 import platform
+from time import sleep
+
 import usb
 
 from SoC import *
@@ -58,6 +60,7 @@ parser.add_argument('--tty', dest='tty_mode', action='store_true', help="dump us
 parser.add_argument('-o', metavar='output_file', dest='output_file', type=str, help='dump usb transfers to file')
 parser.add_argument('--debug', dest='debug', action='store_true', help="enable additional debug output")
 parser.add_argument('--force-soc', dest='force_soc', action='store_true', help="force a specific soc")
+parser.add_argument('--override-usb-path', dest='override_usb_path', type=str, default=None, help='override usb paath')
 parser.add_argument('--skip-upload', dest='skip_upload', action='store_true', help="don't send payload")
 parser.add_argument('--skip-smash', dest='skip_smash', action='store_true', help="don't trigger stack smashing")
 
@@ -92,6 +95,8 @@ except ValueError as e:
 except IOError:
     print("The USB device stopped responding-- sure smells like we've smashed its stack. :)")
     print("Launch complete!")
+
+rcm_device.post_trigger()
 
 if arguments.tty_mode or arguments.output_file:
     if arguments.output_file:
