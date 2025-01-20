@@ -223,6 +223,8 @@ class RCMHax(EPHax):
             exit(-1)
         
         # Find our intermezzo relocator...
+        if arguments.relocator is None:
+            arguments.relocator = os.path.join(arguments.current_dir, "intermezzo.bin")
         intermezzo_path = os.path.expanduser(arguments.relocator)
         if not os.path.isfile(intermezzo_path):
             print("Could not find the intermezzo interposer. Did you build it?")
@@ -425,18 +427,11 @@ class IRAMHax(EPHax):
             return f.read()
 
 
-    def linux_set_usb_sysfs(self, device, path, value):
-        if self.debug:
-            print(f"Setting usb {device}/{path} = {value}")
-        with open (f"/sys/bus/usb/devices/{device}/{path}", "w") as f:
-            f.write(value)
-
-
     def upload_payload(self, arguments):
-        is_linux = platform.system().lower() in ["linux"]
-        
-        devmem_cmd = "busybox devmem"
-        
+        # Find our intermezzo relocator...
+        if arguments.relocator is None:
+            arguments.relocator = os.path.join(arguments.current_dir, "iram_loader.bin")
+
         # Expand out the payload path to handle any user-references.
         payload_path = os.path.expanduser(arguments.payload)
         if not os.path.isfile(payload_path):
@@ -445,6 +440,39 @@ class IRAMHax(EPHax):
 
         with open(payload_path, "rb") as f:
             payload = f.read()
+
+        bootimg_path = self.generate_bootimg_kernel(arguments, payload)
+        self.generate_script(arguments, payload)
+
+        print(f"\n\n\n==> Bootimg method:\n"
+              f" Generated bootimg kernel image to load payload in IRAM"
+              f" at: {bootimg_path}, package this as bootimg kernel and flash"
+              f" to your boot")
+
+
+    def generate_bootimg_kernel(self, arguments, payload):
+        loader_path = os.path.expanduser(arguments.relocator)
+        if not os.path.isfile(loader_path):
+            print("Could not find the iram loader. Did you build it?")
+            exit(-1)
+        with open(loader_path, "rb") as f:
+            bootimg_kernel = f.read()
+        
+        bootimg_kernel += struct.pack("<II", 0xC0DE10AD, len(payload))
+        bootimg_kernel += payload
+
+        #Write it!
+        bootimg_path = os.path.join(arguments.current_dir, "iram_bootimg_kernel.bin")
+        with open(bootimg_path, "wb") as f:
+            f.write(bootimg_kernel)
+            
+        return bootimg_path
+
+
+    def generate_script(self, arguments, payload):
+        is_linux = platform.system().lower() in ["linux"]
+        
+        devmem_cmd = "busybox devmem"
         
         #Generate script to write 
         script_text = f"DEVMEM=\"{devmem_cmd}\"\n"
@@ -486,7 +514,8 @@ class IRAMHax(EPHax):
         with open(script_path, "w") as f:
             f.write(script_text)
             
-        print(f"\n\n\nGenerated script to load the payload into your device\n"
+        print(f"\n\n\n==> Script method:\n"
+              f"Generated script to load the payload into your device\n"
               f"Please run it in your device (android/recovery) with root user\n"
               f"Don't change USB port the device is connected to while doing these steps!")
         if is_linux:

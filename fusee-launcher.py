@@ -53,7 +53,7 @@ parser.add_argument('-w', dest='wait_for_device', action='store_true', help='wai
 parser.add_argument('-V', '--vid', metavar='vendor_id', dest='vid', type=parse_usb_id, default=None, help='overrides the TegraRCM vendor ID')
 parser.add_argument('-P', '--pid', metavar='product_id', dest='pid', type=parse_usb_id, default=None, help='overrides the TegraRCM product ID')
 parser.add_argument('--override-os', metavar='platform', dest='platform', type=str, default=None, help='overrides the detected OS; for advanced users only')
-parser.add_argument('--relocator', metavar='binary', dest='relocator', type=str, default=os.path.join(current_dir, "intermezzo.bin"), help='provides the path to the intermezzo relocation stub')
+parser.add_argument('--relocator', metavar='binary', dest='relocator', type=str, default=None, help='provides the path to the intermezzo relocation stub')
 parser.add_argument('--override-checks', dest='skip_checks', action='store_true', help="don't check for a supported controller; useful if you've patched your EHCI driver")
 parser.add_argument('--allow-failed-id', dest='permissive_id', action='store_true', help="continue even if reading the device's ID fails; useful for development but not for end users")
 parser.add_argument('--tty', dest='tty_mode', action='store_true', help="dump usb transfers to stdout")
