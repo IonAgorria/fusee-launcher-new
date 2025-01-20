@@ -425,6 +425,25 @@ class IRAMHax(EPHax):
     def linux_get_usb_sysfs(self, device, path):
         with open (f"/sys/bus/usb/devices/{device}/{path}", "r") as f:
             return f.read()
+        
+    def get_fusee_smash_cmd(self):
+        fusee_cmd = []
+        skip_next = False
+        for arg in sys.argv:
+            if skip_next:
+                skip_next = False
+                continue
+            if arg == "--skip-smash":
+                arg = "--skip-upload"
+            if arg == "--relocator":
+                skip_next = True
+                continue
+            if arg[0] != '-' or arg in [
+                "-w", "-V", "--vid", "-P", "--pid", "--override-os", "--override-checks",
+                '--tty', '-o', '--debug', '--override-usb-path', '--skip-upload']:
+                fusee_cmd.append(arg)
+        fusee_cmd = " ".join(fusee_cmd)
+        return fusee_cmd
 
 
     def upload_payload(self, arguments):
@@ -446,8 +465,26 @@ class IRAMHax(EPHax):
 
         print(f"\n\n\n==> Bootimg method:\n"
               f" Generated bootimg kernel image to load payload in IRAM"
-              f" at: {bootimg_path}, package this as bootimg kernel and flash"
-              f" to your boot")
+              f" at:\n{bootimg_path}\n"
+              f"- Package this as kernel into a bootimg"
+              f"- Flash recovery to boot partition"
+              f"- Flash the bootimg to recovery partition")
+
+        is_linux = platform.system().lower() in ["linux"]
+        is_usb_authorized = is_linux and self.linux_get_usb_sysfs(f"usb{self.dev_usb_bus}", "authorized_default").strip() == "1"
+        if is_linux:
+            if is_usb_authorized:
+                print(f"- Run this command and then (re)boot the flashed bootimg\n"
+                      f"(at recovery partition) with USB connected to same computer port:\n"
+                      f"echo 0 | sudo tee /sys/bus/usb/devices/usb{self.dev_usb_bus}/authorized_default")
+            else:
+                print(f"- Boot the flashed bootimg (at recovery partition) with USB connected to computer")
+
+        fusee_cmd = self.get_fusee_smash_cmd()
+        print("- Run the following once bootimg puts device in RCM mode to launch the payload:")
+        if is_usb_authorized:
+            print(f"echo 1 | sudo tee /sys/bus/usb/devices/usb{self.dev_usb_bus}/authorized_default")
+        print(fusee_cmd)
 
 
     def generate_bootimg_kernel(self, arguments, payload):
@@ -471,6 +508,7 @@ class IRAMHax(EPHax):
 
     def generate_script(self, arguments, payload):
         is_linux = platform.system().lower() in ["linux"]
+        is_usb_authorized = is_linux and self.linux_get_usb_sysfs(f"usb{self.dev_usb_bus}", "authorized_default").strip() == "1"
         
         devmem_cmd = "busybox devmem"
         
@@ -488,23 +526,15 @@ class IRAMHax(EPHax):
             left = min(8, payload_len - written)
             data = struct.unpack("<Q", payload[written:written+left] + bytes(8 - left))[0]
             script_text += f"$DEVMEM 0x{addr:X} 64 0x{data:X}\n"
-            
-        fusee_cmd = []
-        for arg in sys.argv:
-            if arg == "--skip-smash":
-                arg = "--skip-upload"
-            if arg[0] != '-' or arg in [
-                "-w", "-V", "--vid", "-P", "--pid", "--override-os", "--override-checks",
-               '--tty', '-o', '--debug', '--override-usb-path', '--skip-upload']:
-                fusee_cmd.append(arg)
-        fusee_cmd = " ".join(fusee_cmd)
+        
+        fusee_cmd = self.get_fusee_smash_cmd()
 
         script_text += "echo \"Finished loading data to IRAM! will enter RCM now...\"\n"
         script_text += "echo \"If after launching this command the device doesn't respond after few seconds reboot it\"\n"
         script_text += "echo \"Run on your computer to continue with exploit:\n\"\n"
-        if is_linux and self.linux_get_usb_sysfs(f"usb{self.dev_usb_bus}", "authorized_default").strip() == "1":
+        if is_usb_authorized:
             script_text += f"echo \"echo 1 | sudo tee /sys/bus/usb/devices/usb{self.dev_usb_bus}/authorized_default\"\n"
-        script_text += f"echo \"sudo {fusee_cmd}\"\n"
+        script_text += f"echo \"{fusee_cmd}\"\n"
         script_text += "sleep 1\n"
         script_text += f"$DEVMEM 0x7000E450 32 0x2\n"
         script_text += f"$DEVMEM 0x7000E400 32 0x10\n"
@@ -524,7 +554,7 @@ class IRAMHax(EPHax):
                   f"authorized_default on the usb bus {self.dev_usb_bus} as 0\n")
         print(f"Use these commands for that:\n")
         print(f"adb push {script_path} /sdcard/iram_payload.sh")
-        if is_linux:
+        if is_usb_authorized:
             print(f"echo 0 | sudo tee /sys/bus/usb/devices/usb{self.dev_usb_bus}/authorized_default")
         print(f"adb shell sh \"/sdcard/iram_payload.sh\""
               f"\n\n-------------------------------------------")
@@ -533,3 +563,10 @@ class IRAMHax(EPHax):
     def read(self, length):
         """ Reads data """
         return self.backend.read(0x81, length)
+    
+    def trigger_controlled_memcpy(self, length=None, request=None):
+        is_linux = platform.system().lower() in ["linux"]
+        if is_linux:
+            if self.linux_get_usb_sysfs(self.dev_usb_path, "authorized").strip() == "1":
+                raise ValueError("Device is authorized! this won't work, follow instructions regarding authorized_default")
+        super().trigger_controlled_memcpy(length, request)

@@ -91,7 +91,8 @@ print("Smashing the stack...")
 try:
     rcm_device.trigger_controlled_memcpy()
 except ValueError as e:
-    print(str(e))
+    print("Error!", e)
+    exit(1)
 except IOError:
     print("The USB device stopped responding-- sure smells like we've smashed its stack. :)")
     print("Launch complete!")
