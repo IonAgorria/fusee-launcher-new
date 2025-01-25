@@ -513,7 +513,9 @@ class IRAMHax(EPHax):
         devmem_cmd = "busybox devmem"
         
         #Generate script to write 
-        script_text = f"DEVMEM=\"{devmem_cmd}\"\n"
+        script_text = (f"#!/bin/sh\n"
+                       f"set -e;\n"
+                       f"DEVMEM=\"{devmem_cmd}\"\n")
 
         #Spray for stack
         for addr in range(self.STACK_SPRAY_START, self.STACK_SPRAY_END, 4):
