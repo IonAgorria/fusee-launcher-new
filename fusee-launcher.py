@@ -97,9 +97,9 @@ except IOError:
     print("The USB device stopped responding-- sure smells like we've smashed its stack. :)")
     print("Launch complete!")
 
-rcm_device.post_trigger()
-
 if arguments.tty_mode or arguments.output_file:
+    rcm_device.post_trigger()
+
     if arguments.output_file:
         output_file = os.path.expanduser(arguments.output_file)
         dump = open(output_file, "wb")

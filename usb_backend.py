@@ -31,6 +31,7 @@ class HaxBackend(ABC):
     def __init__(self, skip_checks=False):
         """ Sets up the backend for the given device. """
         self.skip_checks = skip_checks
+        self.dev = None
 
 
     def print_warnings(self):
@@ -85,6 +86,9 @@ class HaxBackend(ABC):
         If it's not, send a ZLP.
         """
         return self.dev.write(endpoint, data, 1000)
+    
+    def remove_device(self):
+        self.dev = None
 
 
     def find_device(self, vid=None, pid=None):

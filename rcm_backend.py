@@ -1,3 +1,5 @@
+from time import sleep
+
 import os
 import platform
 import struct
@@ -8,6 +10,7 @@ from usb_backend import HaxBackend
 
 class EPHax(ABC):
     debug = False
+    override_usb_path = False
     IRAM_END = 0x40040000
 
     # Values to be set per SoC/Hax
@@ -16,6 +19,8 @@ class EPHax(ABC):
 
     def __init__(self, arguments, vid, pid):
         self.debug = arguments.debug
+        self.override_usb_path = arguments.override_usb_path
+        self.wait_for_device = arguments.wait_for_device
         self.pid = pid
         self.vid = vid
 
@@ -38,21 +43,32 @@ class EPHax(ABC):
             exit(-1)
 
         # Grab a connection to the USB device itself.
-        dev = self.find_device(vid, pid)
+        self.find_device()
 
-        if arguments.override_usb_path is None:
+        # Print any use-related warnings.
+        self.backend.print_warnings()
+
+        # Notify the user of which backend we're using.
+        print("Identified a {} system; setting up the appropriate backend.".format(self.backend.BACKEND_NAME))
+
+
+    def find_device(self):
+        """ Attempts to get a connection to the RCM device with the given VID and PID. """
+        dev = self.backend.find_device(self.vid, self.pid)
+
+        if self.override_usb_path is None:
             # If we don't have a device...
             if dev is None:
                 # ... and we're allowed to wait for one, wait indefinitely for one to appear...
-                if arguments.wait_for_device:
+                if self.wait_for_device:
                     print("Waiting for a TegraRCM device to come online...")
                     while dev is None:
-                        dev = self.find_device(vid, pid)
-    
+                        dev = self.backend.find_device(self.vid, self.pid)
+
                 # ... or bail out.
                 else:
                     raise IOError("No TegraRCM device found?")
-    
+
             #Generate USB path
             self.dev_usb_bus = self.dev_usb_path = str(dev.bus)
             first = True
@@ -64,22 +80,11 @@ class EPHax(ABC):
                     self.dev_usb_path += "."
                 self.dev_usb_path += str(p)
         else:
-            self.dev_usb_path = arguments.override_usb_path
+            self.dev_usb_path = self.override_usb_path
             self.dev_usb_bus = self.dev_usb_path.split("-")[0]
 
         if self.debug:
             print(f"USB Device Bus: {self.dev_usb_bus} Path: {self.dev_usb_path}")
-
-        # Print any use-related warnings.
-        self.backend.print_warnings()
-
-        # Notify the user of which backend we're using.
-        print("Identified a {} system; setting up the appropriate backend.".format(self.backend.BACKEND_NAME))
-
-
-    def find_device(self, vid=None, pid=None):
-        """ Attempts to get a connection to the RCM device with the given VID and PID. """
-        return self.backend.find_device(vid, pid)
 
 
     def get_current_buffer_address(_self):
@@ -466,9 +471,8 @@ class IRAMHax(EPHax):
         print(f"\n\n\n==> Bootimg method:\n"
               f" Generated bootimg kernel image to load payload in IRAM"
               f" at:\n{bootimg_path}\n"
-              f"- Package this as kernel into a bootimg"
-              f"- Flash recovery to boot partition"
-              f"- Flash the bootimg to recovery partition")
+              f"- Package this as kernel into your device bootimg"
+              f"- Fastboot boot the packaged bootimg")
 
         is_linux = platform.system().lower() in ["linux"]
         is_usb_authorized = is_linux and self.linux_get_usb_sysfs(f"usb{self.dev_usb_bus}", "authorized_default").strip() == "1"
@@ -572,3 +576,14 @@ class IRAMHax(EPHax):
             if self.linux_get_usb_sysfs(self.dev_usb_path, "authorized").strip() == "1":
                 raise ValueError("Device is authorized! this won't work, follow instructions regarding authorized_default")
         super().trigger_controlled_memcpy(length, request)
+
+    def post_trigger(self):
+	#The T20 will reenumerate so that the USB communication will work properly
+        self.backend.remove_device()
+        sleep(0.5)
+        self.find_device()
+        is_linux = platform.system().lower() in ["linux"]
+        if is_linux:
+            if self.linux_get_usb_sysfs(self.dev_usb_path, "authorized").strip() != "1":
+                raise ValueError("Device is unauthorized! won't be able to read USB back, try again or follow instructions regarding authorized_default")
+
