@@ -9,7 +9,7 @@ NVIDIA_VID = 0x0955
 T20_PIDS  = [0x7820, 0x7F20]
 T30_PIDS  = [0x7030, 0x7130, 0x7330]
 T114_PIDS = [0x7335, 0x7535]
-T124_PIDS = [0x7140, 0x7f40]
+T124_PIDS = [0x7140, 0x7740, 0x7f40]
 T132_PIDS = [0x7F13]
 T210_PIDS = [0x7321, 0x7721]
 
@@ -86,7 +86,7 @@ class T30(RCMHax):
         self.COPY_BUFFER_ADDRESSES   = [0, 0x40005000] # Lower Buffer doesn't matter
 
         self.STACK_END           = self.RCM_PAYLOAD_ADDR
-        self.STACK_SPRAY_END     = self.RCM_PAYLOAD_ADDR - 420 # exact position is known.
+        self.STACK_SPRAY_END     = self.STACK_END - 420 # exact position is known.
         self.STACK_SPRAY_START   = self.STACK_SPRAY_END - 4
 
         RCMHax.__init__(self, *args, **kwargs)
@@ -113,8 +113,8 @@ class T124(RCMHax):
         self.COPY_BUFFER_ADDRESSES   = [0, 0x40008000] # Lower Buffer doesn't matter
 
         self.STACK_END           = self.RCM_PAYLOAD_ADDR
-        self.STACK_SPRAY_END     = self.STACK_END
-        self.STACK_SPRAY_START   = self.STACK_SPRAY_END - 0x200 # Might not be enough
+        self.STACK_SPRAY_END     = self.STACK_END - 0x280
+        self.STACK_SPRAY_START   = self.STACK_SPRAY_END - 0x638
 
         RCMHax.__init__(self, *args, **kwargs)
 
