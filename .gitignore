@@ -2,3 +2,6 @@ __pycache__/
 rcm_*.bin
 iram_payload.sh
 iram_bootimg_kernel.bin
+*.o
+*.elf
+intermezzo.bin
