@@ -471,7 +471,7 @@ class IRAMHax(EPHax):
         print(f"\n\n\n==> Bootimg method:\n"
               f" Generated bootimg kernel image to load payload in IRAM"
               f" at:\n{bootimg_path}\n"
-              f"- Package this as kernel into your device bootimg"
+              f"- Package this as kernel into your device bootimg\n"
               f"- Fastboot boot the packaged bootimg")
 
         is_linux = platform.system().lower() in ["linux"]
