@@ -439,13 +439,15 @@ class IRAMHax(EPHax):
                 skip_next = False
                 continue
             if arg == "--skip-smash":
-                arg = "--skip-upload"
+                fusee_cmd.append("--skip-upload")
+                fusee_cmd.append("--tty")
+                continue
             if arg == "--relocator":
                 skip_next = True
                 continue
             if arg[0] != '-' or arg in [
                 "-w", "-V", "--vid", "-P", "--pid", "--override-os", "--override-checks",
-                '--tty', '-o', '--debug', '--override-usb-path', '--skip-upload']:
+                '-o', '--debug', '--override-usb-path']:
                 fusee_cmd.append(arg)
         fusee_cmd = " ".join(fusee_cmd)
         return fusee_cmd
